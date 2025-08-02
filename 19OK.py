@@ -763,5 +763,31 @@ def main():
     win.show()
     sys.exit(app.exec_())
 
+
+def request_photo(host: str = "127.0.0.1", port: int = 9760, cam_id: int = 0):
+    """Simple client to request a photo and print detected labels."""
+    with socket.create_connection((host, port)) as sock:
+        cmd = json.dumps({"reqType": "photo", "camID": cam_id}) + "\n"
+        sock.sendall(cmd.encode("utf-8"))
+        buf = b""
+        while True:
+            data = sock.recv(4096)
+            if not data:
+                break
+            buf += data
+            while b"\n" in buf:
+                line, buf = buf.split(b"\n", 1)
+                msg = json.loads(line.decode("utf-8"))
+                if "dsData" in msg:
+                    for cam in msg["dsData"]:
+                        for det in cam.get("data", []):
+                            print(f"cam {cam['camID']}: {det['label']} ({det['x']}, {det['y']})")
+                else:
+                    print(msg)
+
+
 if __name__ == "__main__":
-    main()
+    if len(sys.argv) > 1 and sys.argv[1] == "client":
+        request_photo()
+    else:
+        main()
