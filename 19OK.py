@@ -462,19 +462,21 @@ class MainWindow(QtWidgets.QWidget):
             print("[协议] 非法 JSON:", e)
             return
 
-        tp = cmd.get("reqType")
         cam = int(cmd.get("camID", 0))
 
-        if tp == "photo":
+        if "photo" in text:
             self.do_capture_and_send(cam)
-            ack = {
+            reply = {
                 "dsID": "www.hc-system.com.cam",
                 "reqType": "photo",
-                "camID": cam,
+                "camID": 0,
                 "ret": 1,
             }
-            self._send_json(ack)
-        elif tp == "listModel":
+            self._send_json(reply)
+            return
+
+        tp = cmd.get("reqType")
+        if tp == "listModel":
             self._send_json(self.build_model_list_reply())
         elif tp == "changeModel":
             self.current_model = (cmd["name"], cmd["model"])
