@@ -423,13 +423,13 @@ class MainWindow(QtWidgets.QWidget):
     def do_capture_and_send(self, cam_id: int):
         if not self.capture or not self.capture.isOpened():
             print("[摄像头] 未就绪")
-            return
+            return []
         if cam_id != self.cam_combo.currentData():
             print(f"[警告] 请求的相机 {cam_id} 与当前选择的不一致")
         ok, frame = self.capture.read()
         if not ok or frame is None or frame.size == 0:
             print("[摄像头] 读取失败")
-            return
+            return []
 
         shapes_enabled = {
             s for s, chk in [
@@ -441,9 +441,11 @@ class MainWindow(QtWidgets.QWidget):
         }
         labels = detect_shapes(frame, list(self.colors.values()), shapes_enabled)
 
+        results = []
         if not labels:
             print("[识别] 未检测到目标")
         for text, _pos, _col in labels:
+            results.append(text)
             if text in self.cmd_map:
                 msg = self.cmd_map[text]
                 if self.tcp_sender:
@@ -454,6 +456,8 @@ class MainWindow(QtWidgets.QWidget):
             else:
                 print(f"[未配置] {text}")
 
+        return results
+
     def handle_hc_cmd(self, text: str):
         self.append_log(f"[指令] {text}")
         try:
@@ -462,19 +466,22 @@ class MainWindow(QtWidgets.QWidget):
             print("[协议] 非法 JSON:", e)
             return
 
-        tp = cmd.get("reqType")
         cam = int(cmd.get("camID", 0))
 
-        if tp == "photo":
-            self.do_capture_and_send(cam)
-            ack = {
+        if "photo" in text:
+            results = self.do_capture_and_send(cam)
+            reply = {
                 "dsID": "www.hc-system.com.cam",
                 "reqType": "photo",
                 "camID": cam,
-                "ret": 1,
+                "ret": 1 if results else 0,
+                "results": results,
             }
-            self._send_json(ack)
-        elif tp == "listModel":
+            self._send_json(reply)
+            return
+
+        tp = cmd.get("reqType")
+        if tp == "listModel":
             self._send_json(self.build_model_list_reply())
         elif tp == "changeModel":
             self.current_model = (cmd["name"], cmd["model"])
