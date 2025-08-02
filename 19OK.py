@@ -63,6 +63,26 @@ class CamScanner(QtCore.QThread):
         self.resultReady.emit(cams)
 
 
+class CaptureThread(QtCore.QThread):
+    """Background thread to grab a frame and run shape detection."""
+
+    resultReady = QtCore.pyqtSignal(list)
+
+    def __init__(self, capture, colors, shapes_enabled):
+        super().__init__()
+        self.capture = capture
+        self.colors = colors
+        self.shapes_enabled = shapes_enabled
+
+    def run(self):
+        labels = []
+        if self.capture and self.capture.isOpened():
+            ok, frame = self.capture.read()
+            if ok and frame is not None and frame.size != 0:
+                labels = detect_shapes(frame, self.colors, self.shapes_enabled)
+        self.resultReady.emit(labels)
+
+
 # 辅助函数: 资源路径 (兼容 PyInstaller)
 def resource_path(rel: str) -> str:
     base = getattr(sys, "_MEIPASS", Path(__file__).parent)
@@ -199,11 +219,14 @@ class TcpSender:
                 break
 
     def send_data(self, msg: str):
-        try:
-            self.sock.sendall(msg.encode("utf-8") + b"\n")
-            print("[TCP] 已发送:", msg)
-        except Exception as e:
-            print("[TCP] 发送失败:", e)
+        def _send():
+            try:
+                self.sock.sendall(msg.encode("utf-8") + b"\n")
+                print("[TCP] 已发送:", msg)
+            except Exception as e:
+                print("[TCP] 发送失败:", e)
+
+        threading.Thread(target=_send, daemon=True).start()
 
     def close(self):
         try:
@@ -305,6 +328,7 @@ class QTextEditLogger(QtCore.QObject):
 # 主窗口
 class MainWindow(QtWidgets.QWidget):
     FPS_CALC_INTERVAL = 30
+    hc_cmd_signal = QtCore.pyqtSignal(str)
 
     def __init__(self, colors: List[ColorCfg]):
         super().__init__(None, QtCore.Qt.Window)
@@ -353,7 +377,8 @@ class MainWindow(QtWidgets.QWidget):
         self.timer.timeout.connect(self.on_timer)
         self.timer.start(30)
         self.frame_cnt = 0
-        self.svr = start_server(on_message=self.handle_hc_cmd)
+        self.hc_cmd_signal.connect(self.handle_hc_cmd)
+        self.svr = start_server(on_message=self.hc_cmd_signal.emit)
         self._running = True
 
     # 异步摄像头扫描
@@ -426,10 +451,6 @@ class MainWindow(QtWidgets.QWidget):
             return
         if cam_id != self.cam_combo.currentData():
             print(f"[警告] 请求的相机 {cam_id} 与当前选择的不一致")
-        ok, frame = self.capture.read()
-        if not ok or frame is None or frame.size == 0:
-            print("[摄像头] 读取失败")
-            return
 
         shapes_enabled = {
             s for s, chk in [
@@ -439,10 +460,18 @@ class MainWindow(QtWidgets.QWidget):
             ]
             if chk.isChecked()
         }
-        labels = detect_shapes(frame, list(self.colors.values()), shapes_enabled)
 
+        self._cap_thread = CaptureThread(
+            self.capture, list(self.colors.values()), shapes_enabled
+        )
+        self._cap_thread.resultReady.connect(self._handle_capture_labels)
+        self._cap_thread.finished.connect(self._cap_thread.deleteLater)
+        self._cap_thread.start()
+
+    def _handle_capture_labels(self, labels):
         if not labels:
             print("[识别] 未检测到目标")
+            return
         for text, _pos, _col in labels:
             if text in self.cmd_map:
                 msg = self.cmd_map[text]
