@@ -657,6 +657,14 @@ class MainWindow(QtWidgets.QWidget):
     def handle_tcp_msg(self, text: str):
         """Callback for data received from the remote TCP server."""
         self.append_log(f"[TCP 收到] {text}")
+        try:
+            cmd = json.loads(text)
+        except Exception as e:
+            print(f"[协议] 非法 JSON: {e}")
+            return
+
+        if cmd.get("reqType") == "photo":
+            self.handle_hc_cmd(text)
     # ------------------- 摄像头 -------------------
     def open_camera(self):
         idx = self.cam_combo.currentData()
