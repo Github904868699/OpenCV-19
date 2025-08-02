@@ -441,6 +441,11 @@ class MainWindow(QtWidgets.QWidget):
         }
         labels = detect_shapes(frame, list(self.colors.values()), shapes_enabled)
 
+        detections = [
+            {"label": text, "x": tx, "y": ty} for text, (tx, ty), _ in labels
+        ]
+        self.send_position_data(cam_id, detections)
+
         if not labels:
             print("[识别] 未检测到目标")
         for text, _pos, _col in labels:
