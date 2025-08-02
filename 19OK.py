@@ -305,6 +305,7 @@ class QTextEditLogger(QtCore.QObject):
 # 主窗口
 class MainWindow(QtWidgets.QWidget):
     FPS_CALC_INTERVAL = 30
+    tcp_msg_sig = QtCore.pyqtSignal(str)
 
     def __init__(self, colors: List[ColorCfg]):
         super().__init__(None, QtCore.Qt.Window)
@@ -353,7 +354,8 @@ class MainWindow(QtWidgets.QWidget):
         self.timer.timeout.connect(self.on_timer)
         self.timer.start(30)
         self.frame_cnt = 0
-        self.svr = start_server(on_message=self.handle_hc_cmd)
+        self.tcp_msg_sig.connect(self._process_tcp_msg)
+        self.svr = start_server(on_message=self.handle_tcp_msg)
         self._running = True
 
     # 异步摄像头扫描
@@ -655,8 +657,20 @@ class MainWindow(QtWidgets.QWidget):
             QtWidgets.QMessageBox.critical(self, "错误", f"发送失败: {e}")
 
     def handle_tcp_msg(self, text: str):
+        self.tcp_msg_sig.emit(text)
+
+    @QtCore.pyqtSlot(str)
+    def _process_tcp_msg(self, text: str):
         """Callback for data received from the remote TCP server."""
         self.append_log(f"[TCP 收到] {text}")
+        try:
+            cmd = json.loads(text)
+        except Exception as e:
+            print(f"[协议] 非法 JSON: {e}")
+            return
+
+        if cmd.get("reqType") == "photo":
+            self.handle_hc_cmd(text)
     # ------------------- 摄像头 -------------------
     def open_camera(self):
         idx = self.cam_combo.currentData()
