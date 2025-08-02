@@ -467,12 +467,9 @@ class MainWindow(QtWidgets.QWidget):
 
         if tp == "photo":
             self.do_capture_and_send(cam)
-            ack = {
-                "dsID": "www.hc-system.com.cam",
-                "reqType": "photo",
-                "camID": cam,
-                "ret": 1,
-            }
+            # 回传原始指令字段并附加 ret=1 表示处理成功
+            ack = {k: cmd.get(k) for k in ("dsID", "reqType", "camID")}
+            ack["ret"] = 1
             self._send_json(ack)
         elif tp == "listModel":
             self._send_json(self.build_model_list_reply())
